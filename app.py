@@ -6,8 +6,8 @@ from datetime import datetime
 
 # ========== 配置区域 ==========
 # 从环境变量读取密钥（部署时设置）
-QIANWEN_API_KEY = os.getenv("QIANWEN_API_KEY")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+QIANWEN_API_KEY = sk-ws-H.EDLXMLH.H5va.MEQCIFwWX4JZA8YMJV35zvNeUbeXthjh9mszOJa0zIEa9qzYAiARNik4reJSIV1uv2ujWpG04zSKAmOs05CoBtuSa5nK6w
+WEATHER_API_KEY = c7c3122f6c154dc2bf724c1d95fe3ba8
 
 # 通义千问API（兼容OpenAI格式）
 QIANWEN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
