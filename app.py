@@ -1,19 +1,18 @@
 import streamlit as st
 import requests
 import os
+import json
+import re
 
-# 读取密钥
+# ==================== 配置 ====================
 QIANWEN_API_KEY = os.getenv("QIANWEN_API_KEY")
-OWM_API_KEY = os.getenv("OWM_API_KEY")   # OpenWeatherMap Key
+OWM_API_KEY = os.getenv("OWM_API_KEY")          # OpenWeatherMap Key
 
-# 通义千问 URL
 QIANWEN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-
-# 天气 API (OpenWeatherMap)
 WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 
-# 简化知识库
+# ==================== 知识库 ====================
 KNOWLEDGE = {
     "通勤": "商务休闲风，衬衫、西裤、便西、乐福鞋。",
     "运动": "速干材质，透气跑鞋，防晒帽。",
@@ -22,22 +21,50 @@ KNOWLEDGE = {
     "居家": "居家棉质睡衣。"
 }
 
+# ==================== 天气获取 ====================
 def get_weather(city):
     params = {"q": city, "appid": OWM_API_KEY, "units": "metric", "lang": "zh_cn"}
-    resp = requests.get(WEATHER_URL, params=params)
-    if resp.status_code == 200:
-        return resp.json()
-    else:
-        st.error(f"天气查询失败：{resp.json().get('message', '未知错误')}")
+    try:
+        resp = requests.get(WEATHER_URL, params=params, timeout=5)
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            err = resp.json().get("message", "未知错误")
+            st.error(f"天气查询失败：{err}")
+            return None
+    except Exception as e:
+        st.error(f"网络异常：{e}")
         return None
 
 def get_forecast(city):
-    params = {"q": city, "appid": OWM_API_KEY, "units": "metric", "lang": "zh_cn", "cnt": 8}  # 取未来24小时
-    resp = requests.get(FORECAST_URL, params=params)
-    if resp.status_code == 200:
-        return resp.json()
+    params = {"q": city, "appid": OWM_API_KEY, "units": "metric", "lang": "zh_cn", "cnt": 8}
+    try:
+        resp = requests.get(FORECAST_URL, params=params, timeout=5)
+        if resp.status_code == 200:
+            return resp.json()
+    except:
+        pass
     return None
 
+# ==================== JSON 清洗 ====================
+def clean_json_response(raw_text):
+    if not raw_text:
+        return ""
+    # 去掉 ```json ... ``` 包裹
+    match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL)
+    if match:
+        raw_text = match.group(1)
+    else:
+        # 去掉首尾可能的 ```
+        raw_text = re.sub(r'^```|```$', '', raw_text).strip()
+    # 截取第一个 { 到最后一个 }
+    first = raw_text.find('{')
+    last = raw_text.rfind('}')
+    if first != -1 and last != -1:
+        raw_text = raw_text[first:last+1]
+    return raw_text.strip()
+
+# ==================== 大模型调用 ====================
 def call_qianwen(system_prompt, user_prompt):
     headers = {
         "Authorization": f"Bearer {QIANWEN_API_KEY}",
@@ -53,21 +80,24 @@ def call_qianwen(system_prompt, user_prompt):
         "response_format": {"type": "json_object"}
     }
     try:
-        resp = requests.post(QIANWEN_URL, headers=headers, json=data)
+        resp = requests.post(QIANWEN_URL, headers=headers, json=data, timeout=15)
         result = resp.json()
         if "choices" in result:
             return result["choices"][0]["message"]["content"]
         else:
-            return f"大模型返回错误：{result}"
+            st.error(f"大模型返回错误：{result}")
+            return None
     except Exception as e:
-        return f"调用失败：{e}"
+        st.error(f"调用大模型失败：{e}")
+        return None
 
-# ---------- UI ----------
-st.title("👗 智能衣物推荐助手")
+# ==================== UI ====================
+st.set_page_config(page_title="智能穿衣助手", page_icon="👗")
+st.title("👗 基于大模型的智能衣物推荐助手")
 st.markdown("输入城市、场景，获取今日科学穿衣建议～")
 
 city = st.text_input("🏙️ 城市名称（中文或拼音）", value="北京")
-scene = st.selectbox("🎯 活动场景", ["通勤", "运动", "晚宴", "上学", "居家"])
+scene = st.selectbox("🎯 活动场景", list(KNOWLEDGE.keys()))
 gender = st.radio("性别", ["男", "女"], horizontal=True)
 age = st.slider("年龄", 10, 70, 25)
 
@@ -76,19 +106,23 @@ if st.button("帮我推荐今日穿搭"):
         st.error("请先在 Streamlit Secrets 中设置 QIANWEN_API_KEY 和 OWM_API_KEY")
     else:
         with st.spinner("正在获取天气并生成推荐..."):
+            # 获取天气
             weather_data = get_weather(city)
-            if weather_data:
-                main = weather_data["main"]
-                wind = weather_data["wind"]
-                weather_desc = weather_data["weather"][0]["description"]
-                temp = main["temp"]
-                feels = main["feels_like"]
-                humidity = main["humidity"]
-                wind_speed = wind["speed"]
-                # 简易紫外线（OpenWeatherMap免费版无UV，可用云量估计）
-                clouds = weather_data["clouds"]["all"]
+            if not weather_data:
+                st.stop()
 
-                weather_text = f"""
+            # 提取天气要素
+            main = weather_data["main"]
+            wind = weather_data["wind"]
+            weather_desc = weather_data["weather"][0]["description"]
+            temp = main["temp"]
+            feels = main["feels_like"]
+            humidity = main["humidity"]
+            wind_speed = wind["speed"]
+            clouds = weather_data.get("clouds", {}).get("all", "未知")
+
+            # 拼接天气文本
+            weather_text = f"""
 城市：{city}
 天气：{weather_desc}
 气温：{temp}℃（体感{feels}℃）
@@ -97,21 +131,39 @@ if st.button("帮我推荐今日穿搭"):
 云量：{clouds}%
 """.strip()
 
-                knowledge = KNOWLEDGE.get(scene, "日常舒适穿搭")
+            # 获取场景知识
+            knowledge = KNOWLEDGE.get(scene, "日常舒适穿搭")
 
-                system_prompt = """你是专业穿搭顾问“小搭”。根据天气和用户信息，给出具体到材质和品类的穿衣推荐。输出JSON，含upper, lower, shoes, accessories, reason五个字段。语气亲切。"""
-                user_prompt = f"""
+            # 组装提示词
+            system_prompt = """你是专业穿搭顾问“小搭”。根据天气和用户信息，给出具体到材质和品类的穿衣推荐。
+输出JSON，必须包含以下字段：upper, lower, shoes, accessories, reason。
+语气亲切自然，推荐理由简明扼要。"""
+
+            user_prompt = f"""
 天气信息：
 {weather_text}
-用户：{gender}，{age}岁，场景：{scene}
-知识参考：{knowledge}
-请推荐今日穿搭。
-"""
-                result = call_qianwen(system_prompt, user_prompt)
-                try:
-                    result_json = json.loads(result)
-                    st.success("推荐生成完毕！")
-                    st.json(result_json)
-                except:
-                    st.warning("AI输出格式异常，原始输出：")
-                    st.text(result)
+
+用户信息：
+性别：{gender}，年龄：{age}岁，活动场景：{scene}
+
+专业知识参考：
+{knowledge}
+
+请给出今日穿衣推荐。"""
+
+            # 调用大模型
+            raw = call_qianwen(system_prompt, user_prompt)
+            if not raw:
+                st.stop()
+
+            # 清洗并解析JSON
+            cleaned = clean_json_response(raw)
+            try:
+                result = json.loads(cleaned)
+                st.success("推荐生成完毕！")
+                st.json(result)
+                st.markdown("### 🌟 推荐解读")
+                st.info(result.get("reason", ""))
+            except Exception as e:
+                st.warning("AI输出格式异常，原始输出如下：")
+                st.text(raw)
