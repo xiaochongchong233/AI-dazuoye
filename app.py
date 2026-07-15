@@ -93,7 +93,7 @@ st.set_page_config(page_title="智能穿衣助手", page_icon="👗")
 st.title("👗 基于大模型的智能衣物推荐助手")
 st.markdown("输入城市、场景，获取今日科学穿衣建议～")
 
-city = st.text_input("🏙️ 城市名称（中文或拼音）", value="北京")
+city = st.text_input("🏙️ 城市名称（拼音或英文名）", value="Beijing")
 scene = st.selectbox("🎯 活动场景", list(KNOWLEDGE.keys()))
 gender = st.radio("性别", ["男", "女"], horizontal=True)
 age = st.slider("年龄", 10, 70, 25)
