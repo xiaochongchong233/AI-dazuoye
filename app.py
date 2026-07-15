@@ -50,14 +50,11 @@ def get_forecast(city):
 def clean_json_response(raw_text):
     if not raw_text:
         return ""
-    # 去掉 ```json ... ``` 包裹
     match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL)
     if match:
         raw_text = match.group(1)
     else:
-        # 去掉首尾可能的 ```
         raw_text = re.sub(r'^```|```$', '', raw_text).strip()
-    # 截取第一个 { 到最后一个 }
     first = raw_text.find('{')
     last = raw_text.rfind('}')
     if first != -1 and last != -1:
@@ -106,12 +103,10 @@ if st.button("帮我推荐今日穿搭"):
         st.error("请先在 Streamlit Secrets 中设置 QIANWEN_API_KEY 和 OWM_API_KEY")
     else:
         with st.spinner("正在获取天气并生成推荐..."):
-            # 获取天气
             weather_data = get_weather(city)
             if not weather_data:
                 st.stop()
 
-            # 提取天气要素
             main = weather_data["main"]
             wind = weather_data["wind"]
             weather_desc = weather_data["weather"][0]["description"]
@@ -121,7 +116,6 @@ if st.button("帮我推荐今日穿搭"):
             wind_speed = wind["speed"]
             clouds = weather_data.get("clouds", {}).get("all", "未知")
 
-            # 拼接天气文本
             weather_text = f"""
 城市：{city}
 天气：{weather_desc}
@@ -131,10 +125,8 @@ if st.button("帮我推荐今日穿搭"):
 云量：{clouds}%
 """.strip()
 
-            # 获取场景知识
             knowledge = KNOWLEDGE.get(scene, "日常舒适穿搭")
 
-            # 组装提示词
             system_prompt = """你是专业穿搭顾问“小搭”。根据天气和用户信息，给出具体到材质和品类的穿衣推荐。
 输出JSON，必须包含以下字段：upper, lower, shoes, accessories, reason。
 语气亲切自然，推荐理由简明扼要。"""
@@ -151,19 +143,51 @@ if st.button("帮我推荐今日穿搭"):
 
 请给出今日穿衣推荐。"""
 
-            # 调用大模型
             raw = call_qianwen(system_prompt, user_prompt)
             if not raw:
                 st.stop()
 
-            # 清洗并解析JSON
             cleaned = clean_json_response(raw)
             try:
                 result = json.loads(cleaned)
-                st.success("推荐生成完毕！")
-                st.json(result)
-                st.markdown("### 🌟 推荐解读")
-                st.info(result.get("reason", ""))
+                st.success("✅ 推荐生成完毕！")
+
+                # ---------- 优化后的卡片式展示 ----------
+                # 天气信息栏
+                with st.expander("🌤️ 当前天气详情", expanded=True):
+                    cols = st.columns(4)
+                    cols[0].metric("🌡️ 气温", f"{temp}℃", f"体感 {feels}℃")
+                    cols[1].metric("💧 湿度", f"{humidity}%")
+                    cols[2].metric("🌬️ 风速", f"{wind_speed} m/s")
+                    cols[3].metric("☁️ 云量", f"{clouds}%")
+                    st.caption(f"天气状况：{weather_desc}")
+
+                st.markdown("---")
+
+                # 穿搭卡片
+                st.subheader("👔 今日推荐穿搭")
+                tab1, tab2, tab3 = st.columns(3)
+
+                with tab1:
+                    st.markdown("**🧥 上装**")
+                    st.info(result.get("upper", "暂无"))
+                    st.markdown("**👖 下装**")
+                    st.info(result.get("lower", "暂无"))
+
+                with tab2:
+                    st.markdown("**👟 鞋履**")
+                    st.info(result.get("shoes", "暂无"))
+                    st.markdown("**🎒 配饰**")
+                    st.info(result.get("accessories", "无") if result.get("accessories") else "无")
+
+                with tab3:
+                    st.markdown("**💡 推荐理由**")
+                    st.success(result.get("reason", "暂未提供理由"))
+
+                # 保留JSON原始数据查看（折叠）
+                with st.expander("🔍 查看原始JSON数据"):
+                    st.json(result)
+
             except Exception as e:
                 st.warning("AI输出格式异常，原始输出如下：")
                 st.text(raw)
