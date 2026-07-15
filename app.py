@@ -27,28 +27,43 @@ KNOWLEDGE = {
 
 # ========== 工具函数 ==========
 def get_city_id(city_name):
-    """通过城市名称搜索城市ID（和风天气）"""
     url = f"https://geoapi.qweather.com/v2/city/lookup?location={city_name}&key={WEATHER_API_KEY}"
-    resp = requests.get(url).json()
-    if resp.get("code") == "200" and resp.get("location"):
-        return resp["location"][0]["id"]
-    return None
+    try:
+        resp = requests.get(url, timeout=5)
+        st.write("City API raw response:", resp.text)  # 临时显示原始响应
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        st.error(f"城市查询失败：{e}")
+        return None
+    
+    if data.get("code") == "200" and data.get("location"):
+        return data["location"][0]["id"]
+    else:
+        st.error(f"城市查询失败，API返回：{data}")
+        return None
 
 def get_weather_now(city_id):
-    """获取实时天气"""
     params = {"location": city_id, "key": WEATHER_API_KEY}
-    resp = requests.get(WEATHER_NOW_URL, params=params).json()
-    if resp.get("code") == "200":
-        return resp["now"]
-    return None
+    try:
+        resp = requests.get(WEATHER_NOW_URL, params=params, timeout=5)
+        st.write("Weather now raw response:", resp.text)
+        resp.raise_for_status()
+        return resp.json().get("now")
+    except Exception as e:
+        st.error(f"实时天气获取失败：{e}")
+        return None
 
 def get_weather_3d(city_id):
-    """获取未来3天天气预报"""
     params = {"location": city_id, "key": WEATHER_API_KEY}
-    resp = requests.get(WEATHER_3D_URL, params=params).json()
-    if resp.get("code") == "200":
-        return resp["daily"]
-    return None
+    try:
+        resp = requests.get(WEATHER_3D_URL, params=params, timeout=5)
+        st.write("Weather 3d raw response:", resp.text)
+        resp.raise_for_status()
+        return resp.json().get("daily")
+    except Exception as e:
+        st.error(f"天气预报获取失败：{e}")
+        return None
 
 def build_prompt(weather_text, user_gender, user_age, scene, knowledge):
     """构建发送给大模型的提示词"""
